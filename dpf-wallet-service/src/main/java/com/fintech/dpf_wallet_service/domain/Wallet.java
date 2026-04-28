@@ -48,26 +48,22 @@ public class Wallet extends BaseEntity{
 //    private List<Transaction> transactions;
 
     public void deposit(BigDecimal amount) {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Deposit amount must be positive");
-        }
+        validateAmount(amount);
         this.balance = this.balance.add(amount);
     }
 
-    public void withdraw(BigDecimal amount) throws InsufficientWalletBalanceException {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("dpf.internal.insufficient_balance");
-        }
+    public void withdraw(BigDecimal amount) {
+        validateAmount(amount);
 
-        if (getBalance().compareTo(amount) < 0) {
+        if (this.balance.compareTo(amount) < 0) {
             throw new InsufficientWalletBalanceException("dpf.internal.insufficient_balance");
         }
 
         this.balance = this.balance.subtract(amount);
-
     }
 
     private void validateAmount(BigDecimal amount) {
+
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Amount must be greater than zero");
         }
