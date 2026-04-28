@@ -1,0 +1,1 @@
+A distributed wallet and payment processing system built with Spring Boot microservices, implementing a double-entry ledger, supporting idempotent transactions, event-driven transaction processing, and scalable architecture.
