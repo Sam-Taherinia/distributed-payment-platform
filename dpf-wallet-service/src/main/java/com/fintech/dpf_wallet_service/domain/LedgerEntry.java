@@ -12,8 +12,8 @@ import lombok.experimental.SuperBuilder;
 )
 @Getter
 @Setter
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 @SuperBuilder
 public class LedgerEntry extends BaseEntity {

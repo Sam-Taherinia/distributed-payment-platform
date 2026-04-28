@@ -31,11 +31,11 @@ public class Wallet extends BaseEntity{
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal balance = BigDecimal.ZERO;
 
-    // currency
+    // currency (USD, EUR)
     @Enumerated(EnumType.STRING)
     private Currency currency;
 
-    // status
+    // status (ACTIVE,INACTIVE,BLOCKED)
     @Enumerated(EnumType.STRING)
     private WalletStatus status;
 
