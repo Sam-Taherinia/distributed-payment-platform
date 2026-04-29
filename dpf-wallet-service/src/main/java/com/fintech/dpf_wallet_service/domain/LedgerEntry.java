@@ -30,7 +30,7 @@ public class LedgerEntry extends BaseEntity {
 
     // account id
     @Column(name = "account_id", nullable = false)
-    private String accountId;
+    private UUID accountId;
 
     // amount
     @Column(nullable = false, precision = 19, scale = 2)
@@ -78,7 +78,7 @@ public class LedgerEntry extends BaseEntity {
             throw new IllegalArgumentException("Transaction ID must not be null");
         }
 
-        if (accountId == null || accountId.isBlank()) {
+        if (accountId == null) {
             throw new IllegalArgumentException("Account ID must not be empty");
         }
     }

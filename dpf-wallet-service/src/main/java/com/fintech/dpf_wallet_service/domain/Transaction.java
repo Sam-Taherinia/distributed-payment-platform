@@ -8,9 +8,10 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 @Entity
-@Table(name = "transaction"
+@Table(name = "transactions"
 //        indexes = {
 //                @Index(name = "idx_tx_wallet_id", columnList = "wallet_id"),
 //                @Index(name = "idx_tx_reference_id", columnList = "reference_id", unique = true)
@@ -37,6 +38,11 @@ public class Transaction extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private Currency currency;
 
+    // wallet id
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "wallet_id", nullable = false)
+    private Wallet wallet;
+
     // description
     @Column(length = 255)
     private String description;
@@ -52,7 +58,7 @@ public class Transaction extends BaseEntity {
 
     // link related wallet (for transfer)
     @Column(name = "counterparty_wallet_id")
-    private Long counterpartyWalletId;
+    private UUID counterpartyWalletId;
 
     // optimistic locking
     @Version

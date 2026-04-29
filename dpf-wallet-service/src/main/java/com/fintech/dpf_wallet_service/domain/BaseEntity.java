@@ -7,15 +7,16 @@ import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.time.Instant;
 import java.util.Date;
 import java.util.Objects;
 import java.util.UUID;
 
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
+@Getter
 @MappedSuperclass
 @SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
 public class BaseEntity {
 
     @Id
@@ -23,27 +24,26 @@ public class BaseEntity {
     @Column(updatable = false, nullable = false)
     private UUID id;
 
-    @Column
     @CreationTimestamp
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
-    private Date createdAt;
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 
-    @Column
     @UpdateTimestamp
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
-    private Date updatedAt;
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    // ===== Equality (Hibernate-safe) =====
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        BaseEntity that = (BaseEntity) o;
-        return Objects.equals(id, that.id);
+        if (!(o instanceof BaseEntity that)) return false;
+        return id != null && id.equals(that.id);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id);
+        return getClass().hashCode();
     }
 
 }

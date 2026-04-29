@@ -44,8 +44,8 @@ public class Wallet extends BaseEntity{
     private Long version;
 
     // transactions
-//    @OneToMany(mappedBy = "wallet")
-//    private List<Transaction> transactions;
+    @OneToMany(mappedBy = "wallet")
+    private List<Transaction> transactions;
 
     public void deposit(BigDecimal amount) {
         validateAmount(amount);
