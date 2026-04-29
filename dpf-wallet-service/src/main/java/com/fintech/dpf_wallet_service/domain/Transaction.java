@@ -8,6 +8,7 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 @Entity
@@ -36,6 +37,7 @@ public class Transaction extends BaseEntity {
 
     // currency
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private Currency currency;
 
     // wallet id
@@ -53,7 +55,7 @@ public class Transaction extends BaseEntity {
     private TransactionStatus status;
 
     // reference id (idempotency key, for transfer transactions)
-    @Column(name = "reference_id", nullable = false, unique = true)
+    @Column(name = "reference_id", unique = true)
     private String referenceId;
 
     // link related wallet (for transfer)
@@ -64,13 +66,85 @@ public class Transaction extends BaseEntity {
     @Version
     private Long version;
 
-    // ===== DOMAIN METHODS =====
+    public static Transaction createDeposit(
+            Wallet wallet,
+            BigDecimal amount,
+            String description
+    ) {
+        return Transaction.builder()
+                .type(TransactionType.DEPOSIT)
+                .amount(normalize(amount))
+                .currency(wallet.getCurrency())
+                .wallet(wallet)
+                .description(description)
+                .status(TransactionStatus.COMPLETED)
+                .build();
+    }
+
+    public static Transaction createWithdraw(
+            Wallet wallet,
+            BigDecimal amount,
+            String description
+    ) {
+        return Transaction.builder()
+                .type(TransactionType.WITHDRAW)
+                .amount(normalize(amount))
+                .currency(wallet.getCurrency())
+                .wallet(wallet)
+                .description(description)
+                .status(TransactionStatus.COMPLETED)
+                .build();
+    }
+
+    public static Transaction createTransferOut(
+            Wallet from,
+            BigDecimal amount,
+            UUID toWalletId,
+            String referenceId
+    ) {
+        validateReference(referenceId);
+
+        return Transaction.builder()
+                .type(TransactionType.TRANSFER_OUT)
+                .amount(normalize(amount))
+                .currency(from.getCurrency())
+                .wallet(from)
+                .counterpartyWalletId(toWalletId)
+                .referenceId(referenceId)
+                .status(TransactionStatus.PENDING)
+                .build();
+    }
+
+    public static Transaction createTransferIn(
+            Wallet to,
+            BigDecimal amount,
+            UUID fromWalletId,
+            String referenceId
+    ) {
+        validateReference(referenceId);
+
+        return Transaction.builder()
+                .type(TransactionType.TRANSFER_IN)
+                .amount(normalize(amount))
+                .currency(to.getCurrency())
+                .wallet(to)
+                .counterpartyWalletId(fromWalletId)
+                .referenceId(referenceId)
+                .status(TransactionStatus.PENDING)
+                .build();
+    }
 
     public void markSuccess() {
+        if (isFinalized()) {
+            throw new IllegalStateException("Transaction already finalized");
+        }
         this.status = TransactionStatus.COMPLETED;
     }
 
     public void markFailed() {
+        if (isFinalized()) {
+            throw new IllegalStateException("Transaction already finalized");
+        }
         this.status = TransactionStatus.FAILED;
     }
 
@@ -79,4 +153,16 @@ public class Transaction extends BaseEntity {
                 || this.status == TransactionStatus.FAILED;
     }
 
+    private static BigDecimal normalize(BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Amount must be greater than zero");
+        }
+        return amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static void validateReference(String referenceId) {
+        if (referenceId == null || referenceId.isBlank()) {
+            throw new IllegalArgumentException("ReferenceId is required for transfer");
+        }
+    }
 }
