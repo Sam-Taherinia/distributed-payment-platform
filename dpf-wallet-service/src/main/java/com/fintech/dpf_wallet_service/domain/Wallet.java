@@ -9,6 +9,7 @@ import lombok.experimental.SuperBuilder;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 @Entity
 @Table(
@@ -25,7 +26,7 @@ public class Wallet extends BaseEntity{
 
     // user id
     @Column(name = "user_id", nullable = false, unique = true)
-    private String userId;
+    private UUID userId;
 
     // balance
     @Column(nullable = false, precision = 19, scale = 2)
