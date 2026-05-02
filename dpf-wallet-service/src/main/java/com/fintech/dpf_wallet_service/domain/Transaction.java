@@ -103,14 +103,13 @@ public class Transaction extends BaseEntity {
             String referenceId
     ) {
         validateReference(referenceId);
-
         return Transaction.builder()
                 .type(TransactionType.TRANSFER_OUT)
                 .amount(normalize(amount))
                 .currency(from.getCurrency())
                 .wallet(from)
                 .counterpartyWalletId(toWalletId)
-                .referenceId(referenceId)
+                .referenceId(referenceId + "-OUT")
                 .status(TransactionStatus.PENDING)
                 .build();
     }
@@ -122,14 +121,13 @@ public class Transaction extends BaseEntity {
             String referenceId
     ) {
         validateReference(referenceId);
-
         return Transaction.builder()
                 .type(TransactionType.TRANSFER_IN)
                 .amount(normalize(amount))
                 .currency(to.getCurrency())
                 .wallet(to)
                 .counterpartyWalletId(fromWalletId)
-                .referenceId(referenceId)
+                .referenceId(referenceId + "-IN")
                 .status(TransactionStatus.PENDING)
                 .build();
     }

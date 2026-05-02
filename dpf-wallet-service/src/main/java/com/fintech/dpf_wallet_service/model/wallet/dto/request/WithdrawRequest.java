@@ -16,4 +16,9 @@ public record WithdrawRequest(
         String referenceId
 
 ) {
+    public String description() {
+
+        return ""; // TODO
+
+    }
 }

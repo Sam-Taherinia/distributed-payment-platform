@@ -16,4 +16,9 @@ public record DepositRequest(
         String referenceId
 
 ) {
+    public String description() {
+
+        return ""; // TODO
+
+    }
 }
