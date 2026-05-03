@@ -16,9 +16,6 @@ import com.fintech.dpf_wallet_service.service.WalletService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -29,6 +26,7 @@ public class WalletServiceImpl implements WalletService {
     private final WalletRepository walletRepository;
     private final WalletMapper walletMapper;
     private final TransactionRepository transactionRepository;
+    private final IdempotencyService idempotencyService;
 
     @Override
     public WalletResponse createWallet(CreateWalletRequest request) {
@@ -51,96 +49,62 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
-    @Transactional
     public WalletResponse deposit(UUID walletId, DepositRequest request) {
+        return idempotencyService.process(request.referenceId(), request, WalletResponse.class, () -> {
 
-        Wallet wallet = walletRepository.findById(walletId)
-                .orElseThrow(() -> new WalletNotFoundException(walletId));
+            Wallet wallet = walletRepository.findById(walletId)
+                    .orElseThrow(() -> new WalletNotFoundException(walletId));
 
-        // Domain logic
-        wallet.deposit(request.amount());
-
-        // Create transaction
-        Transaction tx = Transaction.createDeposit(
-                wallet,
-                request.amount(),
-                request.description()
-        );
-
-        transactionRepository.save(tx);
-
-        return walletMapper.toDto(wallet);
+            wallet.deposit(request.amount());
+            transactionRepository.save(
+                    Transaction.createDeposit(
+                            wallet,
+                            request.amount(),
+                            request.referenceId(),
+                            request.description()
+                    )
+            );
+            return walletMapper.toDto(wallet);
+        });
     }
 
     @Override
-    @Transactional
     public WalletResponse withdraw(UUID walletId, WithdrawRequest request) {
+        return idempotencyService.process(request.referenceId(), request, WalletResponse.class, () -> {
 
-        Wallet wallet = walletRepository.findById(walletId)
-                .orElseThrow(() -> new WalletNotFoundException(walletId));
+            Wallet wallet = walletRepository.findById(walletId)
+                    .orElseThrow(() -> new WalletNotFoundException(walletId));
 
-        wallet.withdraw(request.amount());
+            wallet.withdraw(request.amount());
+            transactionRepository.save(Transaction.createWithdraw(wallet, request.amount(), request.description()));
 
-        Transaction tx = Transaction.createWithdraw(
-                wallet,
-                request.amount(),
-                request.description()
-        );
-
-        transactionRepository.save(tx);
-
-        return walletMapper.toDto(wallet);
+            return walletMapper.toDto(wallet);
+        });
     }
 
     @Override
-    @Transactional
     public WalletResponse transfer(TransferRequest request) {
+        return idempotencyService.process(request.referenceId(), request, WalletResponse.class, () -> {
 
-        // 1. Idempotency
-        Optional<Transaction> existing =
-                transactionRepository.findByReferenceId(request.referenceId() + "-OUT");
+            Wallet from = walletRepository.findById(request.fromWalletId())
+                    .orElseThrow(() -> new WalletNotFoundException(request.fromWalletId()));
 
-        if (existing.isPresent()) {
-            return walletMapper.toDto(existing.get().getWallet());
-        }
+            Wallet to = walletRepository.findById(request.toWalletId())
+                    .orElseThrow(() -> new WalletNotFoundException(request.toWalletId()));
 
-        // 2. Load wallets
-        Wallet from = walletRepository.findById(request.fromWalletId())
-                .orElseThrow(() -> new WalletNotFoundException(request.fromWalletId()));
+            if (from.getId().equals(to.getId())) {
+                throw new IllegalArgumentException("Cannot transfer to same wallet");
+            }
 
-        Wallet to = walletRepository.findById(request.toWalletId())
-                .orElseThrow(() -> new WalletNotFoundException(request.toWalletId()));
+            from.validateCurrency(to.getCurrency());
 
-        // 3. Validation
-        if (from.getId().equals(to.getId())) {
-            throw new IllegalArgumentException("Cannot transfer to same wallet");
-        }
+            from.withdraw(request.amount());
+            to.deposit(request.amount());
 
-        from.validateCurrency(to.getCurrency());
+            transactionRepository.save(Transaction.createTransferOut(from, request.amount(), to.getId(), request.referenceId()));
+            transactionRepository.save(Transaction.createTransferIn(to, request.amount(), from.getId(), request.referenceId()));
 
-        // 4. Domain logic
-        from.withdraw(request.amount());
-        to.deposit(request.amount());
-
-        // 5. Transactions
-        Transaction outTx = Transaction.createTransferOut(
-                from,
-                request.amount(),
-                to.getId(),
-                request.referenceId()
-        );
-
-        Transaction inTx = Transaction.createTransferIn(
-                to,
-                request.amount(),
-                from.getId(),
-                request.referenceId()
-        );
-
-        // 6. Persist
-        transactionRepository.save(outTx);
-        transactionRepository.save(inTx);
-
-        return walletMapper.toDto(from);
+            return walletMapper.toDto(from);
+        });
     }
 }

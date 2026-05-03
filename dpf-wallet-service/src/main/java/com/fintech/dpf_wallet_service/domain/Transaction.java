@@ -55,7 +55,9 @@ public class Transaction extends BaseEntity {
     private TransactionStatus status;
 
     // reference id (idempotency key, for transfer transactions)
-    @Column(name = "reference_id", unique = true)
+    @Column(name = "reference_id"
+//            , unique = true
+    )
     private String referenceId;
 
     // link related wallet (for transfer)
@@ -69,6 +71,7 @@ public class Transaction extends BaseEntity {
     public static Transaction createDeposit(
             Wallet wallet,
             BigDecimal amount,
+            String referenceId,
             String description
     ) {
         return Transaction.builder()
