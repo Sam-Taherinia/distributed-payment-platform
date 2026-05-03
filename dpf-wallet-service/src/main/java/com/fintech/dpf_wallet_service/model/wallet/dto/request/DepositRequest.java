@@ -13,7 +13,9 @@ public record DepositRequest(
         BigDecimal amount,
 
         @NotBlank
-        String referenceId
+        String referenceId,
+
+        String description
 
 ) {
     public String description() {

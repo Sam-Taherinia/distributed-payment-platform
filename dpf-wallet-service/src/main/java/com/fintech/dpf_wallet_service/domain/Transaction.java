@@ -12,12 +12,11 @@ import java.math.RoundingMode;
 import java.util.UUID;
 
 @Entity
-@Table(name = "transactions"
-//        indexes = {
-//                @Index(name = "idx_tx_wallet_id", columnList = "wallet_id"),
-//                @Index(name = "idx_tx_reference_id", columnList = "reference_id", unique = true)
-//        }
-        )
+@Table(name = "transactions",
+        indexes = {
+                @Index(name = "idx_tx_wallet_id", columnList = "wallet_id"),
+                @Index(name = "idx_tx_reference_id", columnList = "reference_id", unique = true)
+        })
 @Getter
 // @Setter
 @NoArgsConstructor
@@ -55,9 +54,7 @@ public class Transaction extends BaseEntity {
     private TransactionStatus status;
 
     // reference id (idempotency key, for transfer transactions)
-    @Column(name = "reference_id"
-//            , unique = true
-    )
+    @Column(name = "reference_id", nullable = false, unique = true)
     private String referenceId;
 
     // link related wallet (for transfer)
@@ -71,15 +68,18 @@ public class Transaction extends BaseEntity {
     public static Transaction createDeposit(
             Wallet wallet,
             BigDecimal amount,
-            String referenceId,
-            String description
+            String description,
+            String referenceId
     ) {
+        validateReference(referenceId);
+
         return Transaction.builder()
                 .type(TransactionType.DEPOSIT)
                 .amount(normalize(amount))
                 .currency(wallet.getCurrency())
                 .wallet(wallet)
                 .description(description)
+                .referenceId(referenceId)
                 .status(TransactionStatus.COMPLETED)
                 .build();
     }
