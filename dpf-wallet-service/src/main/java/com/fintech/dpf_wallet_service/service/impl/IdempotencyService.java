@@ -1,11 +1,16 @@
 package com.fintech.dpf_wallet_service.service.impl;
 
+//import com.fasterxml.jackson.databind.ObjectMapper;
+//import com.fintech.dpf_wallet_service.config.JacksonConfig.ObjectMapper;
 import com.fintech.dpf_wallet_service.domain.IdempotencyKey;
 import com.fintech.dpf_wallet_service.exception.IdempotencyConflictException;
 import com.fintech.dpf_wallet_service.model.wallet.enums.IdempotencyStatus;
 import com.fintech.dpf_wallet_service.repository.IdempotencyKeyRepository;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +31,6 @@ public class IdempotencyService {
 
     private final IdempotencyKeyRepository repository;
     private final ObjectMapper objectMapper;
-    private final IdempotencyKeyInserter keyInserter;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public <T> T process(
@@ -37,49 +41,56 @@ public class IdempotencyService {
     ) {
 
         String requestHash = hash(request);
+        boolean isNewKey = false;
 
-        // STEP 1 — Try to insert via a separate Spring bean so the REQUIRES_NEW
-        //           transaction is honoured through the proxy (self-calls bypass it)
-        boolean isNewKey = keyInserter.tryInsert(keyValue, requestHash);
+        // STEP 1 — Try insert
+        try {
+            IdempotencyKey newKey = new IdempotencyKey(keyValue, IdempotencyStatus.PROCESSING);
+            newKey.setRequestHash(requestHash);
+            newKey.setLockedAt(Instant.now());
 
-        // STEP 2 — Lock row (critical)
+            repository.saveAndFlush(newKey);
+            isNewKey = true;
+
+            log.info("Created idempotency key: {}", keyValue);
+
+        } catch (DataIntegrityViolationException ex) {
+            log.info("Key already exists: {}", keyValue);
+        }
+
+        // STEP 2 — Lock row
         IdempotencyKey existing = repository.findByIdForUpdate(keyValue)
-                .orElseThrow(() -> new IllegalStateException("Idempotency key missing after insert"));
+                .orElseThrow();
 
-        log.info("Key={}, status={}, isNew={}", keyValue, existing.getStatus(), isNewKey);
-
-        // STEP 3 — If already completed → return cached response
+        // STEP 3 — COMPLETED → return cached
         if (existing.getStatus() == IdempotencyStatus.COMPLETED) {
-            log.info("Returning cached response for key={}", keyValue);
             return deserialize(existing.getResponse(), responseType);
         }
 
-        // STEP 4 — Handle concurrent request
-        if (!isNewKey && existing.getStatus() == IdempotencyStatus.PROCESSING) {
+        // STEP 4 — 🔥 ONLY CREATOR EXECUTES
+        if (!isNewKey) {
 
             boolean timedOut = existing.getLockedAt() != null &&
-                    Duration.between(existing.getLockedAt(), Instant.now()).compareTo(PROCESSING_TIMEOUT) > 0;
+                    Duration.between(existing.getLockedAt(), Instant.now())
+                            .compareTo(PROCESSING_TIMEOUT) > 0;
 
             if (!timedOut) {
-                log.warn("Concurrent request blocked for key={}", keyValue);
                 throw new IdempotencyConflictException(keyValue);
             }
 
-            // Recover stale lock
-            log.warn("Recovering stale PROCESSING key={}", keyValue);
+            // stale lock recovery
             existing.setLockedAt(Instant.now());
         }
 
-        // STEP 5 — Validate request consistency
+        // STEP 5 — Validate request
         if (existing.getRequestHash() != null &&
                 !existing.getRequestHash().equals(requestHash)) {
-
             throw new IllegalStateException(
-                    "Idempotency key reused with different request payload"
+                    "Idempotency key reused with different request"
             );
         }
 
-        // STEP 6 — Execute business logic
+        // STEP 6 — 🔥 ONLY ONE THREAD CAN REACH HERE
         try {
             T result = action.get();
 
@@ -89,24 +100,18 @@ public class IdempotencyService {
 
             repository.save(existing);
 
-            log.info("Idempotency completed for key={}", keyValue);
-
             return result;
 
-        } catch (Exception ex) {
-
+        } catch (Exception e) {
             existing.setStatus(IdempotencyStatus.FAILED);
             existing.setLockedAt(null);
 
             repository.save(existing);
-
-            log.error("Idempotency failed for key={}", keyValue, ex);
-
-            throw ex;
+            throw e;
         }
     }
 
-    // ===================== UTIL =====================
+    // ===== utils =====
 
     private String hash(Object obj) {
         try {
@@ -114,7 +119,7 @@ public class IdempotencyService {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(bytes));
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to hash request", e);
+            throw new IllegalStateException(e);
         }
     }
 
@@ -122,7 +127,7 @@ public class IdempotencyService {
         try {
             return objectMapper.writeValueAsString(obj);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to serialize response", e);
+            throw new IllegalStateException(e);
         }
     }
 
@@ -130,7 +135,7 @@ public class IdempotencyService {
         try {
             return objectMapper.readValue(json, type);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to deserialize response", e);
+            throw new IllegalStateException(e);
         }
     }
 }
