@@ -15,7 +15,8 @@ import java.util.UUID;
 @Table(name = "transactions",
         indexes = {
                 @Index(name = "idx_tx_wallet_id", columnList = "wallet_id"),
-                @Index(name = "idx_tx_reference_id", columnList = "reference_id", unique = true)
+                @Index(name = "idx_tx_reference_id", columnList = "reference_id"),
+                @Index(name = "idx_tx_transfer_id", columnList = "transfer_id")
         })
 @Getter
 // @Setter
@@ -53,9 +54,13 @@ public class Transaction extends BaseEntity {
     @Column(nullable = false)
     private TransactionStatus status;
 
-    // reference id (idempotency key, for transfer transactions)
-    @Column(name = "reference_id", nullable = false, unique = true)
+    // reference id (idempotency key — same value on both legs of a transfer)
+    @Column(name = "reference_id", nullable = false)
     private String referenceId;
+
+    // links both legs of a transfer (null for deposit/withdraw)
+    @Column(name = "transfer_id")
+    private UUID transferId;
 
     // link related wallet (for transfer)
     @Column(name = "counterparty_wallet_id")
@@ -106,7 +111,8 @@ public class Transaction extends BaseEntity {
             Wallet from,
             BigDecimal amount,
             UUID toWalletId,
-            String referenceId
+            String referenceId,
+            UUID transferId
     ) {
         validateReference(referenceId);
         return Transaction.builder()
@@ -115,7 +121,8 @@ public class Transaction extends BaseEntity {
                 .currency(from.getCurrency())
                 .wallet(from)
                 .counterpartyWalletId(toWalletId)
-                .referenceId(referenceId + "-OUT")
+                .referenceId(referenceId)
+                .transferId(transferId)
                 .status(TransactionStatus.PENDING)
                 .build();
     }
@@ -124,7 +131,8 @@ public class Transaction extends BaseEntity {
             Wallet to,
             BigDecimal amount,
             UUID fromWalletId,
-            String referenceId
+            String referenceId,
+            UUID transferId
     ) {
         validateReference(referenceId);
         return Transaction.builder()
@@ -133,7 +141,8 @@ public class Transaction extends BaseEntity {
                 .currency(to.getCurrency())
                 .wallet(to)
                 .counterpartyWalletId(fromWalletId)
-                .referenceId(referenceId + "-IN")
+                .referenceId(referenceId)
+                .transferId(transferId)
                 .status(TransactionStatus.PENDING)
                 .build();
     }

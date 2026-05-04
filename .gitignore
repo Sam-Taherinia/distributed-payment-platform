@@ -50,3 +50,4 @@ docker-compose.override.yml
 
 # Personal Guides (in development phase)
 PRESENTATION.md
+IDEMPOTENCY.md

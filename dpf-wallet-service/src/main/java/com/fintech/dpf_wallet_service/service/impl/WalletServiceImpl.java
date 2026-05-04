@@ -104,10 +104,12 @@ public class WalletServiceImpl implements WalletService {
             from.validateCurrency(to.getCurrency());
 
             // LEDGER-FIRST: persist both legs as PENDING before any wallet mutation
+            // Both legs share the same referenceId (idempotency key) and transferId (links the pair)
+            UUID transferId = UUID.randomUUID();
             Transaction txOut = transactionRepository.save(
-                    Transaction.createTransferOut(from, request.amount(), to.getId(), idempotencyKey));
+                    Transaction.createTransferOut(from, request.amount(), to.getId(), idempotencyKey, transferId));
             Transaction txIn = transactionRepository.save(
-                    Transaction.createTransferIn(to, request.amount(), from.getId(), idempotencyKey));
+                    Transaction.createTransferIn(to, request.amount(), from.getId(), idempotencyKey, transferId));
 
             // DOMAIN LOGIC: wallet mutations
             from.withdraw(request.amount());
