@@ -11,15 +11,15 @@ import org.jspecify.annotations.Nullable;
 import java.util.UUID;
 
 public interface WalletService {
-    @Nullable WalletResponse createWallet(@Valid CreateWalletRequest request);
+    @Nullable WalletResponse createWallet(String idempotencyKey, @Valid CreateWalletRequest request);
 
     @Nullable WalletResponse getWallet(UUID walletId);
 
     @Nullable WalletResponse getWalletByUserId(UUID userId);
 
-    @Nullable WalletResponse deposit(UUID walletId, @Valid DepositRequest request);
+    @Nullable WalletResponse deposit(UUID walletId, String idempotencyKey, @Valid DepositRequest request);
 
-    @Nullable WalletResponse withdraw(UUID walletId, @Valid WithdrawRequest request);
+    @Nullable WalletResponse withdraw(UUID walletId, String idempotencyKey, @Valid WithdrawRequest request);
 
-    @Nullable WalletResponse transfer(@Valid TransferRequest request);
+    @Nullable WalletResponse transfer(String idempotencyKey, @Valid TransferRequest request);
 }

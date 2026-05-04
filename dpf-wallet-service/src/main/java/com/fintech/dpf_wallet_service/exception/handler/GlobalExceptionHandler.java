@@ -1,6 +1,7 @@
 package com.fintech.dpf_wallet_service.exception.handler;
 
 import com.fintech.dpf_wallet_service.exception.IdempotencyConflictException;
+import com.fintech.dpf_wallet_service.exception.IdempotencyPayloadMismatchException;
 import com.fintech.dpf_wallet_service.exception.InsufficientWalletBalanceException;
 import com.fintech.dpf_wallet_service.exception.UserWalletNotFoundException;
 import com.fintech.dpf_wallet_service.exception.WalletNotFoundException;
@@ -31,6 +32,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error(ex.getMessage()));
     }
 
+    @ExceptionHandler(IdempotencyPayloadMismatchException.class)
+    public ResponseEntity<?> handle(IdempotencyPayloadMismatchException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error(ex.getMessage()));
+    }
+
     @ExceptionHandler(InsufficientWalletBalanceException.class)
     public ResponseEntity<?> handle(InsufficientWalletBalanceException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(error(ex.getMessage()));
@@ -39,11 +45,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<?> handle(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error(ex.getMessage()));
-    }
-
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<?> handle(IllegalStateException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(error(ex.getMessage()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

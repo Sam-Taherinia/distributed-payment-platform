@@ -31,9 +31,11 @@ public class WalletServiceImpl implements WalletService {
     private final IdempotencyService idempotencyService;
 
     @Override
-    public WalletResponse createWallet(CreateWalletRequest request) {
-        Wallet savedWallet = walletRepository.save(walletMapper.fromDto(request));
-        return walletMapper.toDto(savedWallet);
+    public WalletResponse createWallet(String idempotencyKey, CreateWalletRequest request) {
+        return idempotencyService.process(idempotencyKey, request, WalletResponse.class, () -> {
+            Wallet savedWallet = walletRepository.save(walletMapper.fromDto(request));
+            return walletMapper.toDto(savedWallet);
+        });
     }
 
     @Override
@@ -51,14 +53,16 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
-    public WalletResponse deposit(UUID walletId, DepositRequest request) {
-        return idempotencyService.process(request.referenceId(), request, WalletResponse.class, () -> {
+    public WalletResponse deposit(UUID walletId, String idempotencyKey, DepositRequest request) {
+        return idempotencyService.process(idempotencyKey, request, WalletResponse.class, () -> {
             Wallet wallet = walletRepository.findById(walletId)
                     .orElseThrow(() -> new WalletNotFoundException(walletId));
 
+            // LEDGER-FIRST: record intent as PENDING before mutating balance
             Transaction tx = transactionRepository.save(
-                    Transaction.createDeposit(wallet, request.amount(), request.description(), request.referenceId()));
+                    Transaction.createDeposit(wallet, request.amount(), request.description(), idempotencyKey));
 
+            // DOMAIN LOGIC
             wallet.deposit(request.amount());
             tx.markSuccess();
 
@@ -67,18 +71,17 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
-    public WalletResponse withdraw(UUID walletId, WithdrawRequest request) {
-        return idempotencyService.process(request.referenceId(), request, WalletResponse.class, () -> {
-
+    public WalletResponse withdraw(UUID walletId, String idempotencyKey, WithdrawRequest request) {
+        return idempotencyService.process(idempotencyKey, request, WalletResponse.class, () -> {
             Wallet wallet = walletRepository.findById(walletId)
                     .orElseThrow(() -> new WalletNotFoundException(walletId));
 
-            // Ledger-first: record intent before mutating balance
+            // LEDGER-FIRST: record intent as PENDING before mutating balance
             Transaction tx = transactionRepository.save(
-                    Transaction.createWithdraw(wallet, request.amount(), request.description(), request.referenceId()));
+                    Transaction.createWithdraw(wallet, request.amount(), request.description(), idempotencyKey));
 
+            // DOMAIN LOGIC
             wallet.withdraw(request.amount());
-
             tx.markSuccess();
 
             return walletMapper.toDto(wallet);
@@ -86,9 +89,8 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
-    public WalletResponse transfer(TransferRequest request) {
-        return idempotencyService.process(request.referenceId(), request, WalletResponse.class, () -> {
-
+    public WalletResponse transfer(String idempotencyKey, TransferRequest request) {
+        return idempotencyService.process(idempotencyKey, request, WalletResponse.class, () -> {
             Wallet from = walletRepository.findById(request.fromWalletId())
                     .orElseThrow(() -> new WalletNotFoundException(request.fromWalletId()));
 
@@ -101,13 +103,13 @@ public class WalletServiceImpl implements WalletService {
 
             from.validateCurrency(to.getCurrency());
 
-            // Ledger-first: persist PENDING records before any wallet mutation
+            // LEDGER-FIRST: persist both legs as PENDING before any wallet mutation
             Transaction txOut = transactionRepository.save(
-                    Transaction.createTransferOut(from, request.amount(), to.getId(), request.referenceId()));
+                    Transaction.createTransferOut(from, request.amount(), to.getId(), idempotencyKey));
             Transaction txIn = transactionRepository.save(
-                    Transaction.createTransferIn(to, request.amount(), from.getId(), request.referenceId()));
+                    Transaction.createTransferIn(to, request.amount(), from.getId(), idempotencyKey));
 
-            // Wallet mutations
+            // DOMAIN LOGIC: wallet mutations
             from.withdraw(request.amount());
             to.deposit(request.amount());
 

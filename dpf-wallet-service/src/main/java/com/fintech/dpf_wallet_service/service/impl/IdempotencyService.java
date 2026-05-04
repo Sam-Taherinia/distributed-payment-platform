@@ -1,9 +1,8 @@
 package com.fintech.dpf_wallet_service.service.impl;
 
-import com.fintech.dpf_wallet_service.domain.IdempotencyKey;
 import com.fintech.dpf_wallet_service.exception.IdempotencyConflictException;
-import com.fintech.dpf_wallet_service.model.wallet.enums.IdempotencyStatus;
-import com.fintech.dpf_wallet_service.repository.IdempotencyKeyRepository;
+import com.fintech.dpf_wallet_service.exception.IdempotencyPayloadMismatchException;
+import com.fintech.dpf_wallet_service.exception.IdempotencyReplayException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +11,6 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
 import java.security.MessageDigest;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.HexFormat;
 import java.util.function.Supplier;
 
@@ -22,17 +19,15 @@ import java.util.function.Supplier;
 @Slf4j
 public class IdempotencyService {
 
-    private static final Duration PROCESSING_TIMEOUT = Duration.ofMinutes(5);
-
-    private final IdempotencyKeyRepository repository;
     private final IdempotencyKeyInserter inserter;
     private final IdempotencyActionExecutor executor;
     private final ObjectMapper objectMapper;
 
-    // No @Transactional here — this method coordinates three separate transactions:
-    // 1. inserter.tryInsert      — REQUIRES_NEW (isolated insert)
-    // 2. executor.execute        — REQUIRES_NEW (business logic)
-    // 3. markCompleted/Failed    — REQUIRES_NEW (status commit, never rolled back by action failure)
+    // No @Transactional here — this method coordinates two separate transactions:
+    // 1. inserter.tryInsert   — REQUIRES_NEW (atomic insert; unique constraint prevents double-insert)
+    // 2. executor.executeUnderLock — REQUIRES_NEW (SELECT FOR UPDATE held for entire execution;
+    //                                lock acquired BEFORE state check, held THROUGH business logic
+    //                                commit — true atomic check-and-set)
     public <T> T process(
             String keyValue,
             Object request,
@@ -41,42 +36,24 @@ public class IdempotencyService {
     ) {
         String requestHash = hash(request);
 
-        // TX 1 — Insert idempotency key (isolated; duplicate → isNewKey=false)
+        // TX 1 — Atomic insert: only one thread gets isNewKey=true; all others get false.
+        // The DB unique constraint on key_value is the guard — not application-level check.
         boolean isNewKey = inserter.tryInsert(keyValue, requestHash);
 
-        // Read current state (no lock needed here; TX 3 will commit the final state)
-        IdempotencyKey existing = repository.findById(keyValue).orElseThrow();
-
-        // Already completed → return exact cached response, no re-execution
-        if (existing.getStatus() == IdempotencyStatus.COMPLETED) {
-            log.info("Idempotency replay for key: {}", keyValue);
-            return deserialize(existing.getResponse(), responseType);
-        }
-
-        // Concurrent in-progress request: reject unless the lock has gone stale
-        if (!isNewKey) {
-            boolean timedOut = existing.getLockedAt() != null &&
-                    Duration.between(existing.getLockedAt(), Instant.now())
-                            .compareTo(PROCESSING_TIMEOUT) > 0;
-            if (!timedOut) {
-                throw new IdempotencyConflictException(keyValue);
-            }
-            log.warn("Stale idempotency lock detected for key: {}, taking over", keyValue);
-        }
-
-        // Reject key reuse with a different payload
-        if (existing.getRequestHash() != null && !existing.getRequestHash().equals(requestHash)) {
-            throw new IllegalStateException("Idempotency key reused with different request");
-        }
-
-        // TX 2 — Execute business logic in its own transaction
-        // TX 3 — Commit idempotency key status independently (never rolled back by TX 2 failure)
+        // TX 2 — Acquire SELECT FOR UPDATE immediately, hold lock through entire execution.
+        // State check, payload validation, business logic, and response caching all happen
+        // inside this single transaction under the held lock.
         try {
-            T result = executor.execute(action);
-            inserter.markCompleted(keyValue, serialize(result));
-            return result;
+            return executor.executeUnderLock(keyValue, requestHash, isNewKey, action, this::serialize);
+        } catch (IdempotencyReplayException replay) {
+            // Key was COMPLETED — deserialize and return the exact cached response
+            return deserialize(replay.getCachedResponse(), responseType);
         } catch (Exception e) {
-            inserter.markFailed(keyValue);
+            // Only mark FAILED for business logic failures, not conflict/mismatch rejections
+            if (!(e instanceof IdempotencyConflictException) &&
+                    !(e instanceof IdempotencyPayloadMismatchException)) {
+                inserter.markFailed(keyValue);
+            }
             throw e;
         }
     }

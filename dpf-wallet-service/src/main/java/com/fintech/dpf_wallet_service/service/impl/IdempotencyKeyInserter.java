@@ -22,9 +22,10 @@ public class IdempotencyKeyInserter {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean tryInsert(String keyValue, String requestHash) {
         try {
-            IdempotencyKey newKey = new IdempotencyKey(keyValue, IdempotencyStatus.PROCESSING);
+            IdempotencyKey newKey = new IdempotencyKey(keyValue, IdempotencyStatus.IN_PROGRESS);
             newKey.setRequestHash(requestHash);
-            newKey.setLockedAt(Instant.now());
+            // lockedAt is set when execution actually begins (inside executeUnderLock),
+            // not here — so the stale-lock timeout is measured from execution start, not insert time
             repository.saveAndFlush(newKey);
             log.info("Idempotency key created: {}", keyValue);
             return true;
@@ -35,20 +36,14 @@ public class IdempotencyKeyInserter {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markCompleted(String keyValue, String serializedResponse) {
-        IdempotencyKey key = repository.findById(keyValue).orElseThrow();
-        key.setStatus(IdempotencyStatus.COMPLETED);
-        key.setResponse(serializedResponse);
-        key.setLockedAt(null);
-        repository.saveAndFlush(key);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(String keyValue) {
-        repository.findById(keyValue).ifPresent(key -> {
-            key.setStatus(IdempotencyStatus.FAILED);
-            key.setLockedAt(null);
-            repository.saveAndFlush(key);
+        repository.findByIdForUpdate(keyValue).ifPresent(key -> {
+            // Only mark FAILED if still IN_PROGRESS — do not overwrite a COMPLETED key
+            if (key.getStatus() == IdempotencyStatus.IN_PROGRESS) {
+                key.setStatus(IdempotencyStatus.FAILED);
+                key.setLockedAt(null);
+                repository.saveAndFlush(key);
+            }
         });
     }
 }
