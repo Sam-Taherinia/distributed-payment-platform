@@ -19,10 +19,6 @@ public class IdempotencyKeyInserter {
 
     private final IdempotencyKeyRepository repository;
 
-    /**
-     * Runs in its own transaction so that a duplicate-key DataIntegrityViolationException
-     * is fully contained here and does not abort the caller's PostgreSQL connection.
-     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean tryInsert(String keyValue, String requestHash) {
         try {
@@ -36,5 +32,23 @@ public class IdempotencyKeyInserter {
             log.info("Idempotency key already exists: {}", keyValue);
             return false;
         }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markCompleted(String keyValue, String serializedResponse) {
+        IdempotencyKey key = repository.findById(keyValue).orElseThrow();
+        key.setStatus(IdempotencyStatus.COMPLETED);
+        key.setResponse(serializedResponse);
+        key.setLockedAt(null);
+        repository.saveAndFlush(key);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markFailed(String keyValue) {
+        repository.findById(keyValue).ifPresent(key -> {
+            key.setStatus(IdempotencyStatus.FAILED);
+            key.setLockedAt(null);
+            repository.saveAndFlush(key);
+        });
     }
 }

@@ -15,11 +15,9 @@ import com.fintech.dpf_wallet_service.repository.WalletRepository;
 import com.fintech.dpf_wallet_service.service.WalletService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -53,47 +51,19 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
-    @Transactional
     public WalletResponse deposit(UUID walletId, DepositRequest request) {
+        return idempotencyService.process(request.referenceId(), request, WalletResponse.class, () -> {
+            Wallet wallet = walletRepository.findById(walletId)
+                    .orElseThrow(() -> new WalletNotFoundException(walletId));
 
-        // 1. IDEMPOTENCY CHECK
-        Optional<Transaction> existing =
-                transactionRepository.findByReferenceId(request.referenceId());
+            Transaction tx = transactionRepository.save(
+                    Transaction.createDeposit(wallet, request.amount(), request.description(), request.referenceId()));
 
-        if (existing.isPresent()) {
-            log.info("Duplicate deposit detected for referenceId={}", request.referenceId());
+            wallet.deposit(request.amount());
+            tx.markSuccess();
 
-            // return SAME wallet state
-            return walletMapper.toDto(existing.get().getWallet());
-        }
-
-        // 2. LOAD WALLET
-        Wallet wallet = walletRepository.findById(walletId)
-                .orElseThrow(() -> new WalletNotFoundException(walletId));
-
-        // 3. DOMAIN LOGIC
-        wallet.deposit(request.amount());
-
-        // 4. CREATE TX WITH referenceId
-        Transaction tx = Transaction.createDeposit(
-                wallet,
-                request.amount(),
-                request.description(),
-                request.referenceId()
-        );
-
-        // 5. SAVE
-        try {
-            transactionRepository.save(tx);
-        } catch (DataIntegrityViolationException ex) {
-            Transaction alreadyExisting = transactionRepository
-                    .findByReferenceId(request.referenceId())
-                    .orElseThrow();
-
-            return walletMapper.toDto(alreadyExisting.getWallet());
-        }
-
-        return walletMapper.toDto(wallet);
+            return walletMapper.toDto(wallet);
+        });
     }
 
     @Override
@@ -103,8 +73,13 @@ public class WalletServiceImpl implements WalletService {
             Wallet wallet = walletRepository.findById(walletId)
                     .orElseThrow(() -> new WalletNotFoundException(walletId));
 
+            // Ledger-first: record intent before mutating balance
+            Transaction tx = transactionRepository.save(
+                    Transaction.createWithdraw(wallet, request.amount(), request.description(), request.referenceId()));
+
             wallet.withdraw(request.amount());
-            transactionRepository.save(Transaction.createWithdraw(wallet, request.amount(), request.description()));
+
+            tx.markSuccess();
 
             return walletMapper.toDto(wallet);
         });
@@ -126,11 +101,19 @@ public class WalletServiceImpl implements WalletService {
 
             from.validateCurrency(to.getCurrency());
 
+            // Ledger-first: persist PENDING records before any wallet mutation
+            Transaction txOut = transactionRepository.save(
+                    Transaction.createTransferOut(from, request.amount(), to.getId(), request.referenceId()));
+            Transaction txIn = transactionRepository.save(
+                    Transaction.createTransferIn(to, request.amount(), from.getId(), request.referenceId()));
+
+            // Wallet mutations
             from.withdraw(request.amount());
             to.deposit(request.amount());
 
-            transactionRepository.save(Transaction.createTransferOut(from, request.amount(), to.getId(), request.referenceId()));
-            transactionRepository.save(Transaction.createTransferIn(to, request.amount(), from.getId(), request.referenceId()));
+            // Mark both legs COMPLETED atomically
+            txOut.markSuccess();
+            txIn.markSuccess();
 
             return walletMapper.toDto(from);
         });

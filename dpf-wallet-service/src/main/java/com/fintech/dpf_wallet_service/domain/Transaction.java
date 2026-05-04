@@ -80,22 +80,25 @@ public class Transaction extends BaseEntity {
                 .wallet(wallet)
                 .description(description)
                 .referenceId(referenceId)
-                .status(TransactionStatus.COMPLETED)
+                .status(TransactionStatus.PENDING)
                 .build();
     }
 
     public static Transaction createWithdraw(
             Wallet wallet,
             BigDecimal amount,
-            String description
+            String description,
+            String referenceId
     ) {
+        validateReference(referenceId);
         return Transaction.builder()
                 .type(TransactionType.WITHDRAW)
                 .amount(normalize(amount))
                 .currency(wallet.getCurrency())
                 .wallet(wallet)
                 .description(description)
-                .status(TransactionStatus.COMPLETED)
+                .referenceId(referenceId)
+                .status(TransactionStatus.PENDING)
                 .build();
     }
 
