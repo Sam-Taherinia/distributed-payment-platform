@@ -47,14 +47,14 @@ public class Wallet extends BaseEntity{
     @Version
     private Long version;
 
-    // transactions TODO
+    // transactions
     @OneToMany(mappedBy = "wallet")
     private List<Transaction> transactions;
 
     public void deposit(BigDecimal amount) {
         validateActive();
         BigDecimal normalized = normalize(amount);
-        this.balance = this.balance.add(amount);
+        this.balance = this.balance.add(normalized);
     }
 
     public void withdraw(BigDecimal amount) {
@@ -63,8 +63,7 @@ public class Wallet extends BaseEntity{
         if (this.balance.compareTo(normalized) < 0) {
             throw new InsufficientWalletBalanceException("dpf.internal.insufficient_balance");
         }
-
-        this.balance = this.balance.subtract(amount);
+        this.balance = this.balance.subtract(normalized);
     }
 
     public void validateCurrency(Currency currency) {
@@ -77,7 +76,12 @@ public class Wallet extends BaseEntity{
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Amount must be greater than zero");
         }
-        return amount.setScale(2, RoundingMode.HALF_UP);
+
+        if (amount.scale() > 2) {
+            throw new IllegalArgumentException("Amount cannot have more than 2 decimal places");
+        }
+
+        return amount.setScale(2, RoundingMode.UNNECESSARY);
     }
 
     private void validateActive() {

@@ -8,6 +8,7 @@ import com.fintech.dpf_wallet_service.model.wallet.dto.response.WalletResponse;
 import jakarta.validation.Valid;
 import org.jspecify.annotations.Nullable;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface WalletService {
@@ -22,4 +23,6 @@ public interface WalletService {
     @Nullable WalletResponse withdraw(UUID walletId, String idempotencyKey, @Valid WithdrawRequest request);
 
     @Nullable WalletResponse transfer(String idempotencyKey, @Valid TransferRequest request);
+
+    @Nullable List<WalletResponse> getAllWallets();
 }

@@ -1,10 +1,7 @@
 package com.fintech.dpf_wallet_service.controller;
 
 import com.fintech.dpf_wallet_service.config.IdempotencyKeyInterceptor;
-import com.fintech.dpf_wallet_service.model.wallet.dto.request.CreateWalletRequest;
-import com.fintech.dpf_wallet_service.model.wallet.dto.request.DepositRequest;
-import com.fintech.dpf_wallet_service.model.wallet.dto.request.TransferRequest;
-import com.fintech.dpf_wallet_service.model.wallet.dto.request.WithdrawRequest;
+import com.fintech.dpf_wallet_service.model.wallet.dto.request.*;
 import com.fintech.dpf_wallet_service.model.wallet.dto.response.WalletResponse;
 import com.fintech.dpf_wallet_service.service.WalletService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -38,6 +36,13 @@ public class WalletController {
     @GetMapping("/{walletId}")
     public ResponseEntity<WalletResponse> getWallet(@PathVariable UUID walletId) {
         return ResponseEntity.ok(walletService.getWallet(walletId));
+    }
+
+    // GET ALL WALLETS
+    // GET /api/v1/wallets
+    @GetMapping("")
+    public ResponseEntity<List<WalletResponse>> getAllWallets() {
+        return ResponseEntity.ok(walletService.getAllWallets());
     }
 
     // GET WALLET BY USER
@@ -73,11 +78,13 @@ public class WalletController {
 
     // TRANSFER
     // POST /api/v1/wallets/transfer
-    @PostMapping("/transfer")
-    public ResponseEntity<WalletResponse> transfer(
-            @Valid @RequestBody TransferRequest request,
+    @PostMapping("/{fromWalletId}/transfer") // TODO : later replace "/wallets/{fromWalletId}/transfer" with "/wallets/me/transfer"
+    public ResponseEntity<WalletResponse> transfer( // TODO : ownership validation
+            @PathVariable UUID fromWalletId,
+            @Valid @RequestBody TransferRequestFromUser requestFromUser,
             HttpServletRequest httpRequest
     ) {
+        TransferRequest request = new TransferRequest(fromWalletId, requestFromUser.toWalletId(), requestFromUser.amount(), requestFromUser.referenceId());
         String idempotencyKey = (String) httpRequest.getAttribute(IdempotencyKeyInterceptor.IDEMPOTENCY_KEY_ATTRIBUTE);
         return ResponseEntity.ok(walletService.transfer(idempotencyKey, request));
     }

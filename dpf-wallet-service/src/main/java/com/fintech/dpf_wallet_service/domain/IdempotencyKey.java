@@ -41,7 +41,5 @@ public class IdempotencyKey {
     public IdempotencyKey(String key, IdempotencyStatus status) {
         this.key = key;
         this.status = status;
-        // lockedAt is intentionally null at insert time — it is set when execution begins
-        // inside executeUnderLock, so the stale-lock timeout is measured from execution start
     }
 }

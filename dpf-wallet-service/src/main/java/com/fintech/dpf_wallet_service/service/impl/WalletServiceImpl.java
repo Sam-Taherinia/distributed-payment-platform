@@ -15,9 +15,11 @@ import com.fintech.dpf_wallet_service.repository.WalletRepository;
 import com.fintech.dpf_wallet_service.service.WalletService;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -121,5 +123,12 @@ public class WalletServiceImpl implements WalletService {
 
             return walletMapper.toDto(from);
         });
+    }
+
+    @Override
+    public @Nullable List<WalletResponse> getAllWallets() {
+        return walletRepository.findAll().stream()
+                .map(walletMapper::toDto)
+                .toList();
     }
 }
