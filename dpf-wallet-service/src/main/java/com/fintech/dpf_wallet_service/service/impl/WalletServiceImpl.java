@@ -1,6 +1,6 @@
 package com.fintech.dpf_wallet_service.service.impl;
 
-import com.fintech.dpf_wallet_service.domain.Transaction;
+import com.fintech.dpf_wallet_service.domain.Payment;
 import com.fintech.dpf_wallet_service.domain.Wallet;
 import com.fintech.dpf_wallet_service.exception.UserWalletNotFoundException;
 import com.fintech.dpf_wallet_service.exception.WalletNotFoundException;
@@ -10,7 +10,7 @@ import com.fintech.dpf_wallet_service.model.wallet.dto.request.DepositRequest;
 import com.fintech.dpf_wallet_service.model.wallet.dto.request.TransferRequest;
 import com.fintech.dpf_wallet_service.model.wallet.dto.request.WithdrawRequest;
 import com.fintech.dpf_wallet_service.model.wallet.dto.response.WalletResponse;
-import com.fintech.dpf_wallet_service.repository.TransactionRepository;
+import com.fintech.dpf_wallet_service.repository.PaymentRepository;
 import com.fintech.dpf_wallet_service.repository.WalletRepository;
 import com.fintech.dpf_wallet_service.service.WalletService;
 import lombok.AllArgsConstructor;
@@ -27,7 +27,7 @@ public class WalletServiceImpl implements WalletService {
 
     private final WalletRepository walletRepository;
     private final WalletMapper walletMapper;
-    private final TransactionRepository transactionRepository;
+    private final PaymentRepository paymentRepository;
     private final IdempotencyService idempotencyService;
 
     @Override
@@ -53,73 +53,112 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
-    public WalletResponse deposit(UUID walletId, String idempotencyKey, DepositRequest request) {
-        return idempotencyService.process(idempotencyKey, request, WalletResponse.class, () -> {
-            Wallet wallet = walletRepository.findById(walletId)
-                    .orElseThrow(() -> new WalletNotFoundException(walletId));
+    public WalletResponse deposit(
+            UUID walletId,
+            String idempotencyKey,
+            DepositRequest request
+    ) {
 
-            // LEDGER-FIRST: record intent as PENDING before mutating balance
-            Transaction tx = transactionRepository.save(
-                    Transaction.createDeposit(wallet, request.amount(), request.description(), idempotencyKey));
+        return idempotencyService.process(
+                idempotencyKey,
+                request,
+                WalletResponse.class,
+                () -> {
 
-            // DOMAIN LOGIC
-            wallet.deposit(request.amount());
-            tx.markSuccess();
+                    Wallet wallet = walletRepository.findById(walletId)
+                            .orElseThrow(() -> new WalletNotFoundException(walletId));
 
-            return walletMapper.toDto(wallet);
-        });
+                    Payment payment = paymentRepository.save(
+                            Payment.createDeposit(
+                                    wallet,
+                                    request.amount(),
+                                    request.description(),
+                                    idempotencyKey
+                            )
+                    );
+
+                    wallet.deposit(request.amount());
+
+                    payment.markCompleted();
+
+                    return walletMapper.toDto(wallet);
+                }
+        );
     }
 
     @Override
-    public WalletResponse withdraw(UUID walletId, String idempotencyKey, WithdrawRequest request) {
-        return idempotencyService.process(idempotencyKey, request, WalletResponse.class, () -> {
-            Wallet wallet = walletRepository.findById(walletId)
-                    .orElseThrow(() -> new WalletNotFoundException(walletId));
+    public WalletResponse withdraw(
+            UUID walletId,
+            String idempotencyKey,
+            WithdrawRequest request
+    ) {
 
-            // LEDGER-FIRST: record intent as PENDING before mutating balance
-            Transaction tx = transactionRepository.save(
-                    Transaction.createWithdraw(wallet, request.amount(), request.description(), idempotencyKey));
+        return idempotencyService.process(
+                idempotencyKey,
+                request,
+                WalletResponse.class,
+                () -> {
 
-            // DOMAIN LOGIC
-            wallet.withdraw(request.amount());
-            tx.markSuccess();
+                    Wallet wallet = walletRepository.findById(walletId)
+                            .orElseThrow(() -> new WalletNotFoundException(walletId));
 
-            return walletMapper.toDto(wallet);
-        });
+                    Payment payment = paymentRepository.save(
+                            Payment.createWithdraw(
+                                    wallet,
+                                    request.amount(),
+                                    request.description(),
+                                    idempotencyKey
+                            )
+                    );
+
+                    wallet.withdraw(request.amount());
+
+                    payment.markCompleted();
+
+                    return walletMapper.toDto(wallet);
+                }
+        );
     }
 
     @Override
-    public WalletResponse transfer(String idempotencyKey, TransferRequest request) {
-        return idempotencyService.process(idempotencyKey, request, WalletResponse.class, () -> {
-            Wallet from = walletRepository.findById(request.fromWalletId())
-                    .orElseThrow(() -> new WalletNotFoundException(request.fromWalletId()));
+    @Transactional
+    public WalletResponse transfer(
+            String idempotencyKey,
+            TransferRequest request
+    ) {
 
-            Wallet to = walletRepository.findById(request.toWalletId())
-                    .orElseThrow(() -> new WalletNotFoundException(request.toWalletId()));
+        return idempotencyService.process(
+                idempotencyKey,
+                request,
+                WalletResponse.class,
+                () -> {
 
-            if (from.getId().equals(to.getId())) {
-                throw new IllegalArgumentException("Cannot transfer to same wallet");
-            }
+                    Wallet from = walletRepository.findById(request.fromWalletId())
+                            .orElseThrow(() ->
+                                    new WalletNotFoundException(request.fromWalletId()));
 
-            from.validateCurrency(to.getCurrency());
+                    Wallet to = walletRepository.findById(request.toWalletId())
+                            .orElseThrow(() ->
+                                    new WalletNotFoundException(request.toWalletId()));
 
-            // LEDGER-FIRST: persist both legs as PENDING before any wallet mutation
-            // Both legs share the same referenceId (idempotency key) and transferId (links the pair)
-            UUID transferId = UUID.randomUUID();
-            Transaction txOut = transactionRepository.save(
-                    Transaction.createTransferOut(from, request.amount(), to.getId(), idempotencyKey, transferId));
-            Transaction txIn = transactionRepository.save(
-                    Transaction.createTransferIn(to, request.amount(), from.getId(), idempotencyKey, transferId));
+                    Payment payment = paymentRepository.save(
+                            Payment.createTransfer(
+                                    from,
+                                    to,
+                                    request.amount(),
+                                    idempotencyKey,
+                                    request.description()
+                            )
+                    );
 
-            // DOMAIN LOGIC: wallet mutations
-            from.withdraw(request.amount());
-            to.deposit(request.amount());
+                    from.withdraw(request.amount());
 
-            // Mark both legs COMPLETED atomically
-            txOut.markSuccess();
-            txIn.markSuccess();
+                    to.deposit(request.amount());
 
-            return walletMapper.toDto(from);
-        });
+                    payment.markCompleted();
+
+                    return walletMapper.toDto(from);
+                }
+        );
     }
 }

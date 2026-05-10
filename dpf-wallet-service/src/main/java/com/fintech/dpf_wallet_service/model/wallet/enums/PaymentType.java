@@ -1,8 +1,9 @@
 package com.fintech.dpf_wallet_service.model.wallet.enums;
 
-public enum TransactionType {
+public enum PaymentType {
+
     DEPOSIT,
     WITHDRAW,
-    TRANSFER_IN,
-    TRANSFER_OUT
+    TRANSFER,
+    REFUND
 }

@@ -20,7 +20,9 @@ public record TransferRequest(
         BigDecimal amount,
 
         @NotBlank
-        String referenceId
+        String referenceId,
+
+        String description
 
 ) {
 }

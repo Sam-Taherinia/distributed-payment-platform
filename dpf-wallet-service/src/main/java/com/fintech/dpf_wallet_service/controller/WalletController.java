@@ -78,6 +78,10 @@ public class WalletController {
             @Valid @RequestBody TransferRequest request,
             HttpServletRequest httpRequest
     ) {
+<<<<<<< Updated upstream
+=======
+        TransferRequest request = new TransferRequest(fromWalletId, requestFromUser.toWalletId(), requestFromUser.amount(), requestFromUser.referenceId(), requestFromUser.description());
+>>>>>>> Stashed changes
         String idempotencyKey = (String) httpRequest.getAttribute(IdempotencyKeyInterceptor.IDEMPOTENCY_KEY_ATTRIBUTE);
         return ResponseEntity.ok(walletService.transfer(idempotencyKey, request));
     }

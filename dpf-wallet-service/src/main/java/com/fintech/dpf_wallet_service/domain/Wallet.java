@@ -47,9 +47,18 @@ public class Wallet extends BaseEntity{
     @Version
     private Long version;
 
+<<<<<<< Updated upstream
     // transactions TODO
     @OneToMany(mappedBy = "wallet")
     private List<Transaction> transactions;
+=======
+    // payments
+    @OneToMany(mappedBy = "sourceWallet")
+    private List<Payment> outgoingPayments;
+
+    @OneToMany(mappedBy = "destinationWallet")
+    private List<Payment> incomingPayments;
+>>>>>>> Stashed changes
 
     public void deposit(BigDecimal amount) {
         validateActive();
