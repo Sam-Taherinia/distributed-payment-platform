@@ -10,6 +10,16 @@ target/
 *.iml
 *.ipr
 
+# local AI tools
+*graphify*
+*skills*
+*rules*
+AGENTS.md
+dpf-gateway/README.md
+dpf-notification-service/README.md
+dpf-user-service/README.md
+infrastructure/README.md
+
 # Eclipse / STS
 .apt_generated
 .classpath
@@ -51,3 +61,4 @@ docker-compose.override.yml
 # Personal Guides (in development phase)
 PRESENTATION.md
 IDEMPOTENCY.md
+PROJECT-GOAL.md
